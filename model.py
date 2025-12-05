@@ -87,7 +87,7 @@ class RMSNorm(nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.Tensor(dim))
     def _norm(self,x):
-        return x*torch.rsqt(x.pow(2).mean(-1,keepdim=True)+self.eps)
+        return x*torch.rsqrt(x.pow(2).mean(-1,keepdim=True)+self.eps)
     def forward(self,x):
         # 归一化先转精度再转回来
         return self.weight*self._norm(x.float()).type_as(x)
@@ -129,7 +129,7 @@ def repeat_kv(x:torch.Tensor,n_rep:int):
     if n_rep==1:
         return x
     else:
-        return x.unsqueeze(3).expand(bsz,seqlen,num_kvheads,n_rep,dim).view(bsz,seqlen,-1,dim)
+        return x[:, :, :, None, :].expand(bsz,seqlen,num_kvheads,n_rep,dim).reshape(bsz,seqlen,-1,dim)
 
 
 class Attention(nn.Module):
@@ -141,7 +141,7 @@ class Attention(nn.Module):
         self.n_local_heads=args.num_attention_heads
         self.n_local_kv_heads=args.num_key_value_heads
         self.n_rep=self.n_local_heads//self.n_local_kv_heads
-        self.head_dim=args.hidden_size//self.num_attention_heads
+        self.head_dim=args.hidden_size//args.num_attention_heads
         self.qw=nn.Linear(args.hidden_size,self.n_local_heads*self.head_dim,bias=False)
         self.kw=nn.Linear(args.hidden_size,self.n_local_kv_heads*self.head_dim,bias=False)
         self.vw=nn.Linear(args.hidden_size,self.n_local_kv_heads*self.head_dim,bias=False)
@@ -150,7 +150,7 @@ class Attention(nn.Module):
         self.res_dropout=nn.Dropout(args.dropout)
         self.dropout=args.dropout
         # args.flash是bool值
-        self.flash=hasattr(torch.nn.functional,'scaled_dot_product_attention') and args.flash
+        self.flash=hasattr(torch.nn.functional,'scaled_dot_product_attention') and args.flash_attn
     def forward(self,
                 x:torch.Tensor,
                 position_embeddings: Tuple[torch.Tensor, torch.Tensor],
@@ -235,11 +235,11 @@ class MinimindModel(nn.Module):
         self.config=config
         self.embed=nn.Embedding(config.vocab_size,config.hidden_size)
         self.dropout=nn.Dropout(config.dropout)
-        self.layers=nn.ModuleList([MinimindBlock(layer,config) for layer in range(config.layers)])
+        self.layers=nn.ModuleList([MinimindBlock(layer,config) for layer in range(config.num_hidden_layers)])
         self.norm=RMSNorm(config.hidden_size,config.rms_norm_eps)
         freqs_cos,freqs_sin=precompute_freqs_cis(config.hidden_size//config.num_attention_heads,
                                                  end=config.max_position_embeddings,
-                                                 rope_base=config.rope_base,
+                                                 rope_base=config.rope_theta,
                                                  rope_scaling=config.rope_scaling)
         self.register_buffer('freqs_cos',freqs_cos)
         self.register_buffer('freqs_sin',freqs_sin)
