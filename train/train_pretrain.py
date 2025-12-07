@@ -1,5 +1,8 @@
-import argparse
+import sys
 import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import argparse
 import time
 from contextlib import nullcontext
 import torch.distributed as dist
@@ -16,6 +19,7 @@ from torch.utils.data import DistributedSampler, DataLoader
 from dataset.lm_dataset import PretrainDataset
 from model import MiniMindConfig
 from train.trainer_utils import get_lr, init_distributed_mode, setup_seed, lm_checkpoint, is_main_process, init_model,Logger
+
 
 
 def train_epoch(epoch,loader,iters,start_step=0,wandb=None):
@@ -75,10 +79,6 @@ def train_epoch(epoch,loader,iters,start_step=0,wandb=None):
 
 
 
-
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MiniMind Pretraining")
     parser.add_argument("--save_dir", type=str, default="../out", help="模型保存目录")
@@ -118,8 +118,19 @@ if __name__ == "__main__":
 
     # 设置混合精度
     device_type='cuda'if 'cuda' in args.device else "cpu"
-    dtype=torch.bfloat16 if 'bfloat16' in args.dtype else torch.float16
-    autocast_ctx=nullcontext() if device_type=='cpu' else torch.cuda.amp.autocast(dtype=dtype)
+    if args.dtype == 'float32':
+        # 如果指定 float32，直接禁用 autocast，使用纯单精度
+        autocast_ctx = nullcontext()
+        dtype = torch.float32
+        print("⚡ 模式：全精度 (Float32) - 显存占用较高，但最稳定")
+    else:
+        # 否则使用混合精度
+        dtype = torch.bfloat16 if args.dtype == 'bfloat16' else torch.float16
+        try:
+            autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=dtype)
+        except AttributeError:
+            autocast_ctx = torch.cuda.amp.autocast(dtype=dtype)
+        print(f"⚡ 模式：混合精度 ({args.dtype})")
 
     # 配置wandb
     wandb=None

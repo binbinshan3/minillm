@@ -99,7 +99,7 @@ def is_main_process():
     return not dist.is_initialized() or dist.get_rank() == 0
 
 
-def init_model(lm_config, from_weight='pretrain', tokenizer_path='D:\deep_learning\minimind', save_dir='../out', device='cuda'):
+def init_model(lm_config, from_weight='pretrain', tokenizer_path='/content/drive/MyDrive/minimind', save_dir='../out', device='cuda'):
     tokenizer=AutoTokenizer.from_pretrained(tokenizer_path)
     model=MinimindForCausalLM(lm_config)
 
@@ -110,4 +110,10 @@ def init_model(lm_config, from_weight='pretrain', tokenizer_path='D:\deep_learni
         model.load_state_dict(weights,strict=False)
     Logger(f'所加载Model可训练参数：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.3f} 百万')
     return model.to(device), tokenizer
+
+class SkipBatchSampler(Sampler):
+    def __init__(self, sampler, batch_size, skip_batches=0):
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.skip_batches = skip_batches
 
